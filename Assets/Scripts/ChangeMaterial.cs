@@ -1,7 +1,9 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using JetBrains.Annotations;
 using Unity.Mathematics;
 using Unity.VisualScripting;
 using UnityEngine;
@@ -38,6 +40,9 @@ public class ChangeMaterial : MonoBehaviour
     public ColoredMaterial coloredMaterial;
     public List<Vector2> Signs;
     Transform RSign;
+    public int index;
+    public string filePath;
+    public bool ifGenerate;
 
 
     public struct ColoredMaterial
@@ -49,6 +54,7 @@ public class ChangeMaterial : MonoBehaviour
 
     void Start()
     {
+        index = 0;
         RSign = GameObject.Find("RSign").transform;
         coloredMaterial = GetColor();
         foreach (Transform blade in EnergyOrganBlades.transform)
@@ -359,10 +365,33 @@ public class ChangeMaterial : MonoBehaviour
     {
         while (true)
         {
-            yield return new WaitForSeconds(0.25f);
+            yield return new WaitForSeconds(0.1f);
+            bool ifHaveLabel = false;
+            StreamWriter sr;
+            if (ifGenerate)
+            {
+                sr = new StreamWriter(filePath + "/labels/" + index.ToString() + ".txt", true);
+            }
+            else
+            {
+                sr = new StreamWriter(filePath + "/labels/temp.txt", true);
+            }
+
+
             foreach (Transform blade in EnergyOrganBlades.transform)
             {
                 int BladeClass = 0;
+
+                List<Vector3> boundPoints = new();
+                foreach (Transform bladePart in blade)
+                {
+                    boundPoints.Add(bladePart.GetComponent<MeshRenderer>().bounds.max);
+                    boundPoints.Add(bladePart.GetComponent<MeshRenderer>().bounds.min);
+                    boundPoints.Add(bladePart.GetComponent<MeshRenderer>().bounds.center);
+                }
+                string mainTargetLabel = drawBounds(boundPoints, 0.05f);
+
+
                 foreach (Transform child in blade)
                 {
                     if (child.name == "Circle")
@@ -377,33 +406,98 @@ public class ChangeMaterial : MonoBehaviour
                     }
                     if (child.name == "Positions")
                     {
-                        foreach (Transform sign in child)
+                        Signs.Clear();
+                        switch (BladeClass)
                         {
-                            Color rayColor;
-                            switch (BladeClass)
-                            {
-                                case 0:
-                                    rayColor = Color.black;
+                            case 1:
+                                {
+
+                                    foreach (Transform sign in child)
+                                    {
+                                        Vector3 ScreenPoint = GetWorldToScreenPoint(sign.transform.position);
+                                        Signs.Add(new Vector2(ScreenPoint.x, ScreenPoint.y));
+                                    }
+                                    string label = "0 ";
+                                    label += mainTargetLabel;
+                                    foreach (Vector2 point in Signs)
+                                    {
+                                        label += (point.x / HkCamera.scaledPixelWidth).ToString();
+                                        label += " ";
+                                        label += (1 - (point.y / HkCamera.scaledPixelHeight)).ToString();
+                                        label += " 1 ";
+                                    }
+                                    Debug.Log(label);
+
+                                    sr.WriteLine(label);
+                                    ifHaveLabel = true;
                                     break;
-                                case 1:
-                                    rayColor = Color.green;
+                                }
+                            case 2:
+                                {
+                                    foreach (Transform sign in child)
+                                    {
+                                        Vector3 ScreenPoint = GetWorldToScreenPoint(sign.transform.position);
+                                        Signs.Add(new Vector2(ScreenPoint.x, ScreenPoint.y));
+                                    }
+                                    string label = "1 ";
+                                    label += mainTargetLabel;
+                                    foreach (Vector2 point in Signs)
+                                    {
+                                        label += (point.x / HkCamera.scaledPixelWidth).ToString();
+                                        label += " ";
+                                        label += (1 - (point.y / HkCamera.scaledPixelHeight)).ToString();
+                                        label += " 1 ";
+                                    }
+                                    Debug.Log(label);
+
+                                    sr.WriteLine(label);
+                                    ifHaveLabel = true;
                                     break;
-                                case 2:
-                                    rayColor = Color.blue;
+                                }
+                            case 0:
+                                {
                                     break;
-                                default:
-                                    rayColor = Color.gray;
-                                    break;
-                            }
-                            Debug.DrawLine(sign.transform.position, new Vector3(6.14f, 1.05f, 5.74f), rayColor, 0.25f);
-                            Debug.DrawLine(RSign.transform.position, new Vector3(6.14f, 1.05f, 5.74f), rayColor, 0.25f);
+                                }
                         }
                     }
                 }
             }
+            sr.Close();
+            sr.Dispose();
+            if (ifHaveLabel && ifGenerate)
+                ScreenCapture.CaptureScreenshot(filePath + "/images/" + index.ToString() + ".jpg");
+            index++;
         }
+
     }
-    void Update()
+
+    String drawBounds(List<Vector3> boundPoints, float duration)
     {
+        Color color = Color.green;
+        float x = 1f;
+        float max_y = -2000, max_z = -2000, min_y = 2000, min_z = 2000;
+
+        foreach (Vector3 point in boundPoints)
+        {
+            max_y = point.y > max_y ? point.y : max_y;
+            max_z = point.z > max_z ? point.z : max_z;
+            min_y = point.y < min_y ? point.y : min_y;
+            min_z = point.z < min_z ? point.z : min_z;
+        }
+
+        Vector3 max = new Vector3(x, max_y, max_z);
+        Vector3 min = new Vector3(x, min_y, min_z);
+
+        Debug.DrawLine(max, min, Color.green, 0.25f);
+        Debug.DrawLine(max, new Vector3(max.x, max.y + 0.05f, max.z), Color.red, 0.25f);
+        Vector2 screenMax = GetWorldToScreenPoint(max);
+        Vector2 screenMin = GetWorldToScreenPoint(min);
+
+        float height = Math.Abs(screenMax.y - screenMin.y);
+        float width = Math.Abs(screenMax.x - screenMin.x);
+        Vector2 center = new Vector2(screenMin.x + width / 2f, screenMin.y + height / 2f);
+
+
+        return (center.x / HkCamera.scaledPixelWidth).ToString() + " " + (1 - (center.y / HkCamera.scaledPixelHeight)).ToString() + " " + (width / HkCamera.pixelWidth).ToString() + " " + (height / HkCamera.pixelHeight).ToString() + " ";
     }
 }
